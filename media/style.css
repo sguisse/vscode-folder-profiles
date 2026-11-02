@@ -86,12 +86,14 @@ body {
 
 /* Cards List */
 .cards-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 10px;
+  align-items: start;
 }
 
 .profile-card {
+  min-width: 0;
   background-color: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
@@ -142,6 +144,7 @@ body {
   font-weight: 600;
   font-size: 13px;
   color: var(--vscode-foreground);
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -281,7 +284,7 @@ input:checked + .switch-slider:before {
 }
 
 .folder-chip {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: inherit;
   font-size: 11px;
   background: rgba(128, 128, 128, 0.12);
   border: 1px solid var(--card-border);
