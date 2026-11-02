@@ -1,0 +1,125 @@
+// Place your settings in this file to overwrite default and user settings.
+{
+	"files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/.jj": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      "**/*.secret": true,
+      "**/.trunk/*actions/": false,
+      "**/.trunk/*logs/": false,
+      "**/.trunk/*notifications/": false,
+      "**/.trunk/*out/": false,
+      "**/.trunk/*plugins/": false,
+      "out": false,
+      "dist": false
+   },
+	"search.exclude": {
+		"out": true, // set this to false to include "out" folder in search results
+		"dist": true // set this to false to include "dist" folder in search results
+	},
+	// Turn off tsc task auto detection since we have the necessary tasks as npm scripts
+   "typescript.js/ts.autoDetect": "off",
+
+   "yaml.schemas": {
+      "file:///Users/mac-SGUISS21/.vscode-insiders/extensions/continue.continue-2.1.0-darwin-arm64/config-yaml-schema.json": [
+         ".continue/**/*.yaml"
+      ]
+   },
+   "commentTranslate.multiLineMerge": true,
+
+   "filesExporter.exchange": [
+      {
+         "icon": "assets/brands/gemini.svg",
+         "url": "https://gemini.google.com/",
+         "tooltip": "Open Gemini",
+         "height": "45px",
+         "width": "45px",
+         "openInVSCode": false
+      },
+      {
+         "icon": "https://storage.googleapis.com/support-kms-prod/zY0QaDiBw6WBTWdpCduEnUxFkrkLwFvpc405",
+         "url": "https://gemini.google.com/gem/62027f9ad252",
+         "tooltip": "Open Gems",
+         "height": "65px",
+         "width": "65px",
+         "openInVSCode": false
+      },
+      {
+         "icon": "assets/brands/notebookLM.svg",
+         "url": "https://notebooklm.google.com/",
+         "tooltip": "Open NotebookLM",
+         "height": "45px",
+         "width": "45px",
+         "openInVSCode": false
+      },
+      {
+        "icon": "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/light/claude-color.png",
+        "url": "http://127.0.0.1:8082/admin/",
+        "tooltip": "Open Free Claude Code Admin",
+        "height": "45px",
+        "width": "45px",
+        "openInVSCode": false
+      },
+      {
+        "icon": "https://companieslogo.com/img/orig/NVDA-220e1e03.png?t=1722952498",
+        "url": "https://build.nvidia.com/settings/api-keys",
+        "tooltip": "Open NVIDIA Key Management",
+        "height": "45px",
+        "width": "55px",
+        "openInVSCode": false
+      }
+
+
+   ],
+   "filesExporter.maxFileSizeKb": 500,
+   "filesExporter.excludeExtensionsRegex": "^[^.]+$|.*\\.(?:log|tmp|lock|zip|tar|png|jpg|gif|pyc|vsix|svg)$",
+   "svg.preview.background": "editor",
+
+   // Disable automatic background fetching
+   //"git.autofetch": false,
+   // Stop VS Code from counting untracked files (MASSIVE speedup for large repos)
+   //"git.untrackedChanges": "hidden",
+   // Limit status checks to the active repository root
+   //"git.repositoryScanMaxDepth": 1,
+   // Use faster, native diff algorithm
+   "diffEditor.renderSideBySide": true,
+   // Ignore whitespace changes by default in diffs
+   "diffEditor.ignoreTrimWhitespace": true,
+   "folder-color.pathColors": [
+      {
+         "folderPath": "vscode-rag-graph-explorer/webview/",
+         "color": "foldercolorizer.color_005fff",
+         "badge": "FE"
+      },
+      {
+         "folderPath": "vscode-rag-graph-explorer/shared/",
+         "color": "foldercolorizer.color_8700ff",
+         "badge": "CM"
+      },
+      {
+         "folderPath": "vscode-rag-graph-explorer/backend/",
+         "color": "foldercolorizer.color_d7af00",
+         "badge": "BE"
+      },
+      {
+         "folderPath": "vscode-rag-graph-explorer/scripts/",
+         "color": "foldercolorizer.color_00af00",
+         "badge": "PY"
+      },
+      {
+         "folderPath": "vscode-rag-graph-explorer/sandbox/",
+         "color": "foldercolorizer.color_ff5f87",
+         "badge": "SB"
+      }
+   ],
+   "favorites.sortDirection": "ASC",
+   "commentTranslate.source": "Google",
+   "explorerFilter.isActive": false,
+   // Prevent VS Code from decoration-checking every untracked file
+   //"git.decorations.enabled": false
+
+
+}

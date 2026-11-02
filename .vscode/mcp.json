@@ -1,0 +1,16 @@
+{
+   "servers": {
+      "leanix": {
+         "type": "http",
+         "url": "https://mcp.leanix.net/services/mcp-server/v1/mcp",
+         "headers": {
+            "Authorization": "Bearer %LEANIX_BEARER_TOKEN%}"
+         }
+      },
+   }
+}
+
+ // "jqassistant-graph-rag": {
+ //        "type": "http",
+ //        "url": "http://127.0.0.1:8800/mcp/"
+ //     },

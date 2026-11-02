@@ -1,93 +1,135 @@
 {
-"name": "vscode-folder-profiles",
-"displayName": "Folder Profiles Manager & Sync",
-"description": "Manage and synchronize redundant folder profiles via XML manifests and YAML configuration.",
-"version": "1.0.0",
-"publisher": "local-architect",
-"type": "module",
-"engines": {
-"vscode": "^1.85.0"
-},
-"categories": [
-"Other"
-],
-"main": "./dist/extension.js",
-"activationEvents": [],
-"contributes": {
-"viewsContainers": {
-"activitybar": [
-{
-"id": "folder-profiles-container",
-"title": "Folder Profiles",
-"icon": "$(folder-library)"
-}
-]
-},
-"views": {
-"folder-profiles-container": [
-{
-"type": "webview",
-"id": "folderProfilesView",
-"name": "Folder Profiles"
-}
-]
-},
-"commands": [
-{
-"command": "folderProfiles.createFromSelection",
-"title": "Folder Profiles: Create / Update Profile...",
-"icon": "$(plus)"
-},
-{
-"command": "folderProfiles.refresh",
-"title": "Folder Profiles: Refresh Profiles List",
-"icon": "$(refresh)"
-},
-{
-"command": "folderProfiles.toggleProfile",
-"title": "Folder Profiles: Toggle Profile State"
-},
-{
-"command": "folderProfiles.deleteProfile",
-"title": "Folder Profiles: Delete Profile"
-}
-],
-"menus": {
-"explorer/context": [
-{
-"command": "folderProfiles.createFromSelection",
-"when": "explorerResourceIsFolder",
-"group": "7_modification@1"
-}
-],
-"view/title": [
-{
-"command": "folderProfiles.refresh",
-"when": "view == folderProfilesView",
-"group": "navigation@1"
-},
-{
-"command": "folderProfiles.createFromSelection",
-"when": "view == folderProfilesView",
-"group": "navigation@2"
-}
-]
-}
-},
-"scripts": {
-"vscode:prepublish": "npm run package",
-"compile": "node esbuild.js",
-"watch": "node esbuild.js --watch",
-"package": "node esbuild.js --production"
-},
-"dependencies": {
-"fast-xml-parser": "^4.3.6",
-"typescript": "^5.4.2",
-"yaml": "^2.4.1"
-},
-"devDependencies": {
-"@types/node": "^20.11.24",
-"@types/vscode": "^1.85.0",
-"esbuild": "^0.20.2"
-}
+    "name": "sgu-folder-profiles",
+    "displayName": "Folder Profiles Manager & Sync",
+    "description": "Manage and synchronize redundant folder profiles via XML manifests and YAML configuration",
+    "version": "0.1.0",
+    "publisher": "sguisse",
+    "homepage": "https://github.com/sguisse/vscode-folder-profiles",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sguisse/vscode-folder-profiles.git"
+    },
+    "license": "MIT",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "keywords": [
+        "workspace",
+        "usability",
+        "project",
+        "explorer",
+        "folders",
+        "profiles"
+    ],
+    "icon": "assets/icons/extension.png",
+    "main": "./dist/extension.js",
+    "activationEvents": [
+        "onStartupFinished",
+        "onCommand:folderProfiles.createFromSelection",
+        "onCommand:folderProfiles.refresh",
+        "onCommand:folderProfiles.toggleProfile",
+        "onCommand:folderProfiles.deleteProfile",
+        "onCommand:folderProfiles.openConfigFile"
+    ],
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "folder-profiles-container",
+                    "title": "Folder Profiles",
+                    "icon": "$(folder-library)"
+                }
+            ]
+        },
+        "views": {
+            "folder-profiles-container": [
+                {
+                    "type": "webview",
+                    "id": "folderProfilesView",
+                    "name": "Folder Profiles"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "folderProfiles.createFromSelection",
+                "title": "Folder Profiles: Create / Update Profile..."
+            },
+            {
+                "command": "folderProfiles.refresh",
+                "title": "Folder Profiles: Refresh Profiles List",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "folderProfiles.openConfigFile",
+                "title": "Folder Profiles: Open Profiles File",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "folderProfiles.toggleProfile",
+                "title": "Folder Profiles: Toggle Profile State"
+            },
+            {
+                "command": "folderProfiles.deleteProfile",
+                "title": "Folder Profiles: Delete Profile"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "folderProfiles.createFromSelection",
+                    "group": "7_modification@1"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "folderProfiles.refresh",
+                    "when": "view == folderProfilesView",
+                    "group": "navigation@1"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "folderProfiles.createFromSelection",
+                    "when": "false"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Folder Profiles",
+            "properties": {
+                "folderProfiles.manifestsFolderPath": {
+                    "type": "string",
+                    "default": ".vscode/manifests",
+                    "description": "Workspace-relative folder where the XML manifests of the profiles are written."
+                },
+                "folderProfiles.foldersProfilesFilePath": {
+                    "type": "string",
+                    "default": ".vscode/.folders_profiles.yaml",
+                    "description": "Workspace-relative path of the YAML file that stores the folder profiles."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "install:all": "bun install",
+        "vscode:prepublish": "node esbuild.mjs --production",
+        "compile": "tsc -p ./ --noEmit",
+        "watch": "node esbuild.mjs --watch",
+        "build": "tsc -p ./ --noEmit && node esbuild.mjs",
+        "package": "npx @vscode/vsce package --no-dependencies"
+    },
+    "dependencies": {
+        "fast-xml-parser": "^4.3.6",
+        "typescript": "^5.4.2",
+        "yaml": "^2.4.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.24",
+        "@types/vscode": "^1.85.0",
+        "esbuild": "^0.20.2"
+    }
 }
