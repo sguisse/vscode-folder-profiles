@@ -1,0 +1,1772 @@
+generation:
+  files:
+    - filename: "package"
+      extension: "json"
+      path: "."
+      action: create
+      content: |-
+        {
+          "name": "vscode-folder-profiles",
+          "displayName": "Folder Profiles Manager & Sync",
+          "description": "Manage and synchronize redundant folder profiles via XML manifests and YAML configuration.",
+          "version": "1.0.0",
+          "publisher": "local-architect",
+          "engines": {
+            "vscode": "^1.85.0"
+          },
+          "categories": [
+            "Other"
+          ],
+          "main": "./dist/extension.js",
+          "activationEvents": [],
+          "contributes": {
+            "viewsContainers": {
+              "activitybar": [
+                {
+                  "id": "folder-profiles-container",
+                  "title": "Folder Profiles",
+                  "icon": "$(folder-library)"
+                }
+              ]
+            },
+            "views": {
+              "folder-profiles-container": [
+                {
+                  "type": "webview",
+                  "id": "folderProfilesView",
+                  "name": "Folder Profiles"
+                }
+              ]
+            },
+            "commands": [
+              {
+                "command": "folderProfiles.createFromSelection",
+                "title": "Folder Profiles: Create / Update Profile...",
+                "icon": "$(plus)"
+              },
+              {
+                "command": "folderProfiles.refresh",
+                "title": "Folder Profiles: Refresh Profiles List",
+                "icon": "$(refresh)"
+              },
+              {
+                "command": "folderProfiles.toggleProfile",
+                "title": "Folder Profiles: Toggle Profile State"
+              },
+              {
+                "command": "folderProfiles.deleteProfile",
+                "title": "Folder Profiles: Delete Profile"
+              }
+            ],
+            "menus": {
+              "explorer/context": [
+                {
+                  "command": "folderProfiles.createFromSelection",
+                  "when": "explorerResourceIsFolder",
+                  "group": "7_modification@1"
+                }
+              ],
+              "view/title": [
+                {
+                  "command": "folderProfiles.refresh",
+                  "when": "view == folderProfilesView",
+                  "group": "navigation@1"
+                },
+                {
+                  "command": "folderProfiles.createFromSelection",
+                  "when": "view == folderProfilesView",
+                  "group": "navigation@2"
+                }
+              ]
+            }
+          },
+          "scripts": {
+            "vscode:prepublish": "npm run package",
+            "compile": "node esbuild.js",
+            "watch": "node esbuild.js --watch",
+            "package": "node esbuild.js --production"
+          },
+          "dependencies": {
+            "fast-xml-parser": "^4.3.6",
+            "yaml": "^2.4.1"
+          },
+          "devDependencies": {
+            "@types/node": "^20.11.24",
+            "@types/vscode": "^1.85.0",
+            "esbuild": "^0.20.2",
+            "typescript": "^5.4.2"
+          }
+        }
+    - filename: "tsconfig"
+      extension: "json"
+      path: "."
+      action: create
+      content: |-
+        {
+          "compilerOptions": {
+            "module": "CommonJS",
+            "target": "ES2022",
+            "lib": ["ES2022"],
+            "outDir": "dist",
+            "rootDir": "src",
+            "strict": true,
+            "sourceMap": true,
+            "esModuleInterop": true,
+            "skipLibCheck": true,
+            "forceConsistentCasingInFileNames": true
+          },
+          "include": ["src/**/*"]
+        }
+    - filename: "esbuild"
+      extension: "js"
+      path: "."
+      action: create
+      content: |-
+        const esbuild = require('esbuild');
+
+        const production = process.argv.includes('--production');
+        const watch = process.argv.includes('--watch');
+
+        /**
+         * Fast packaging and bundling script using esbuild.
+         */
+        async function main() {
+          const ctx = await esbuild.context({
+            entryPoints: ['src/extension.ts'],
+            bundle: true,
+            format: 'cjs',
+            minify: production,
+            sourcemap: !production,
+            sourcesContent: false,
+            platform: 'node',
+            outfile: 'dist/extension.js',
+            external: ['vscode'],
+            logLevel: 'info'
+          });
+
+          if (watch) {
+            console.log('[esbuild] Watching for file changes...');
+            await ctx.watch();
+          } else {
+            await ctx.rebuild();
+            await ctx.dispose();
+            console.log('[esbuild] Build completed successfully.');
+          }
+        }
+
+        main().catch(err => {
+          console.error(err);
+          process.exit(1);
+        });
+    - filename: "types"
+      extension: "ts"
+      path: "src"
+      action: create
+      content: |-
+        /**
+         * Schema for a folder profile in .vscode/.folders_profiles.yaml
+         */
+        export interface FolderProfile {
+          name: string;
+          description?: string;
+          tags: string[];
+          enabled: boolean;
+          folders: string[];
+          manifestPath: string;
+        }
+
+        /**
+         * Root schema for .vscode/.folders_profiles.yaml
+         */
+        export interface FoldersProfilesConfig {
+          profiles: FolderProfile[];
+        }
+
+        /**
+         * Internal structure of a captured file in the XML manifest
+         */
+        export interface ManifestFileEntry {
+          filename: string;
+          extension: string;
+          path: string;
+          content: string;
+        }
+
+        /**
+         * Parsed XML manifest structure
+         */
+        export interface ParsedManifest {
+          export?: {
+            files?: {
+              file?: ManifestFileEntry | ManifestFileEntry[];
+            };
+          };
+        }
+
+        /**
+         * Incoming messages sent from the Webview to the extension host
+         */
+        export type WebviewIncomingMessage =
+          | { command: 'ready' }
+          | { command: 'toggleProfile'; profileName: string; enabled: boolean }
+          | { command: 'deleteProfile'; profileName: string }
+          | { command: 'openFolder'; folderPath: string }
+          | { command: 'openManifest'; manifestPath: string }
+          | { command: 'createProfile' }
+          | { command: 'refresh' };
+
+        /**
+         * Outgoing messages sent from the extension host to the Webview
+         */
+        export type WebviewOutgoingMessage =
+          | { type: 'setProfiles'; profiles: FolderProfile[] }
+          | { type: 'setLoading'; loading: boolean; message?: string };
+    - filename: "profileStorage"
+      extension: "ts"
+      path: "src/services"
+      action: create
+      content: |-
+        import * as vscode from 'vscode';
+        import * as YAML from 'yaml';
+        import { FolderProfile, FoldersProfilesConfig } from '../types';
+
+        export class ProfileStorage {
+          public static readonly CONFIG_RELATIVE_PATH = '.vscode/.folders_profiles.yaml';
+
+          constructor(private readonly workspaceRoot: vscode.Uri) {}
+
+          public get configFileUri(): vscode.Uri {
+            return vscode.Uri.joinPath(this.workspaceRoot, ProfileStorage.CONFIG_RELATIVE_PATH);
+          }
+
+          /**
+           * Loads YAML configuration from the workspace.
+           * Returns an empty profile list if the file does not exist yet.
+           */
+          public async loadConfig(): Promise<FoldersProfilesConfig> {
+            try {
+              const fileBytes = await vscode.workspace.fs.readFile(this.configFileUri);
+              const text = Buffer.from(fileBytes).toString('utf8');
+              const parsed = YAML.parse(text);
+
+              if (parsed && Array.isArray(parsed.profiles)) {
+                return {
+                  profiles: parsed.profiles.map((p: any) => ({
+                    name: String(p.name || ''),
+                    description: p.description ? String(p.description) : '',
+                    tags: Array.isArray(p.tags) ? p.tags.map(String) : [],
+                    enabled: Boolean(p.enabled),
+                    folders: Array.isArray(p.folders) ? p.folders.map(String) : [],
+                    manifestPath: String(p.manifestPath || '')
+                  }))
+                };
+              }
+              return { profiles: [] };
+            } catch (error) {
+              if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
+                return { profiles: [] };
+              }
+              console.warn('[ProfileStorage] Failed to read or parse YAML config file:', error);
+              return { profiles: [] };
+            }
+          }
+
+          /**
+           * Atomically saves YAML configuration.
+           * Ensures the .vscode folder exists before writing.
+           */
+          public async saveConfig(config: FoldersProfilesConfig): Promise<void> {
+            const vscodeFolderUri = vscode.Uri.joinPath(this.workspaceRoot, '.vscode');
+            await vscode.workspace.fs.createDirectory(vscodeFolderUri);
+
+            const yamlContent = YAML.stringify(config, {
+              indent: 2,
+              singleQuote: false
+            });
+
+            const tempFileUri = vscode.Uri.joinPath(
+              vscodeFolderUri,
+              `.folders_profiles.yaml.tmp.${Date.now()}`
+            );
+
+            const bytes = Buffer.from(yamlContent, 'utf8');
+
+            // Atomic write via temporary file rename
+            await vscode.workspace.fs.writeFile(tempFileUri, bytes);
+            await vscode.workspace.fs.rename(tempFileUri, this.configFileUri, { overwrite: true });
+          }
+
+          /**
+           * Retrieves an existing profile by name (case-insensitive).
+           */
+          public async getProfile(name: string): Promise<FolderProfile | undefined> {
+            const config = await this.loadConfig();
+            return config.profiles.find(p => p.name.toLowerCase() === name.toLowerCase());
+          }
+
+          /**
+           * Adds or updates a profile in the configuration.
+           */
+          public async upsertProfile(profile: FolderProfile): Promise<void> {
+            const config = await this.loadConfig();
+            const existingIndex = config.profiles.findIndex(
+              p => p.name.toLowerCase() === profile.name.toLowerCase()
+            );
+
+            if (existingIndex >= 0) {
+              config.profiles[existingIndex] = profile;
+            } else {
+              config.profiles.push(profile);
+            }
+
+            await this.saveConfig(config);
+          }
+
+          /**
+           * Updates the enabled state of a profile.
+           */
+          public async setProfileEnabled(name: string, enabled: boolean): Promise<FolderProfile | undefined> {
+            const config = await this.loadConfig();
+            const target = config.profiles.find(p => p.name === name);
+            if (target) {
+              target.enabled = enabled;
+              await this.saveConfig(config);
+              return target;
+            }
+            return undefined;
+          }
+
+          /**
+           * Deletes a profile by name.
+           */
+          public async deleteProfile(name: string): Promise<boolean> {
+            const config = await this.loadConfig();
+            const initialLength = config.profiles.length;
+            config.profiles = config.profiles.filter(p => p.name !== name);
+
+            if (config.profiles.length !== initialLength) {
+              await this.saveConfig(config);
+              return true;
+            }
+            return false;
+          }
+        }
+    - filename: "manifestService"
+      extension: "ts"
+      path: "src/services"
+      action: create
+      content: |-
+        import * as vscode from 'vscode';
+        import * as path from 'path';
+        import { XMLParser } from 'fast-xml-parser';
+        import { ManifestFileEntry, ParsedManifest } from '../types';
+
+        export class ManifestService {
+          constructor(private readonly workspaceRoot: vscode.Uri) {}
+
+          /**
+           * Escapes CDATA closing tags `]]>` inside raw text content
+           * by splitting the sequence into two adjacent CDATA blocks.
+           */
+          public static escapeCData(content: string): string {
+            return content.replace(/\]\]>/g, ']]]]><![CDATA[>');
+          }
+
+          /**
+           * Escapes standard XML reserved characters.
+           */
+          public static escapeXml(text: string): string {
+            return text
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;');
+          }
+
+          /**
+           * Recursively scans specified workspace-relative folders and builds an XML manifest.
+           */
+          public async generateManifest(
+            relativeFolderPaths: string[],
+            destinationRelativeManifestPath: string
+          ): Promise<string> {
+            const fileEntries: ManifestFileEntry[] = [];
+
+            for (const relFolder of relativeFolderPaths) {
+              const folderUri = vscode.Uri.joinPath(this.workspaceRoot, relFolder);
+              await this.collectFilesRecursively(folderUri, fileEntries);
+            }
+
+            const xmlLines: string[] = [
+              '<?xml version="1.0" encoding="UTF-8"?>',
+              '<export>',
+              '  <files>'
+            ];
+
+            for (const entry of fileEntries) {
+              xmlLines.push('    <file>');
+              xmlLines.push(`      <filename>${ManifestService.escapeXml(entry.filename)}</filename>`);
+              xmlLines.push(`      <extension>${ManifestService.escapeXml(entry.extension)}</extension>`);
+              xmlLines.push(`      <path>${ManifestService.escapeXml(entry.path)}</path>`);
+              xmlLines.push(`      <content><![CDATA[${ManifestService.escapeCData(entry.content)}]]></content>`);
+              xmlLines.push('    </file>');
+            }
+
+            xmlLines.push('  </files>');
+            xmlLines.push('</export>');
+
+            const xmlContent = xmlLines.join('\n');
+            const destinationUri = vscode.Uri.joinPath(this.workspaceRoot, destinationRelativeManifestPath);
+
+            // Ensure parent directory exists (e.g. .vscode/manifests)
+            const parentDir = vscode.Uri.file(path.dirname(destinationUri.fsPath));
+            await vscode.workspace.fs.createDirectory(parentDir);
+
+            await vscode.workspace.fs.writeFile(destinationUri, Buffer.from(xmlContent, 'utf8'));
+            return destinationRelativeManifestPath;
+          }
+
+          /**
+           * Reads the XML manifest and restores all files and directories on disk.
+           */
+          public async restoreManifest(relativeManifestPath: string): Promise<number> {
+            const manifestUri = vscode.Uri.joinPath(this.workspaceRoot, relativeManifestPath);
+            const fileBytes = await vscode.workspace.fs.readFile(manifestUri);
+            const xmlContent = Buffer.from(fileBytes).toString('utf8');
+
+            const parser = new XMLParser({
+              ignoreAttributes: false,
+              parseTagValue: false,
+              trimValues: false,
+              cdataPropName: false
+            });
+
+            const parsed: ParsedManifest = parser.parse(xmlContent);
+            const rawFiles = parsed.export?.files?.file;
+
+            if (!rawFiles) {
+              return 0;
+            }
+
+            const filesList: ManifestFileEntry[] = Array.isArray(rawFiles) ? rawFiles : [rawFiles];
+            let restoredCount = 0;
+
+            for (const fileItem of filesList) {
+              const relativeDirPath = (fileItem.path || '').trim();
+              const filename = (fileItem.filename || '').trim();
+              const ext = (fileItem.extension || '').trim();
+              const content = fileItem.content !== undefined ? String(fileItem.content) : '';
+
+              const fullName = ext ? `${filename}.${ext}` : filename;
+              const targetDirUri = vscode.Uri.joinPath(this.workspaceRoot, relativeDirPath);
+              const targetFileUri = vscode.Uri.joinPath(targetDirUri, fullName);
+
+              await vscode.workspace.fs.createDirectory(targetDirUri);
+              await vscode.workspace.fs.writeFile(targetFileUri, Buffer.from(content, 'utf8'));
+              restoredCount++;
+            }
+
+            return restoredCount;
+          }
+
+          /**
+           * Recursively collects files while skipping version control and dependency directories.
+           */
+          private async collectFilesRecursively(
+            currentDirUri: vscode.Uri,
+            entries: ManifestFileEntry[]
+          ): Promise<void> {
+            let dirContent: [string, vscode.FileType][];
+            try {
+              dirContent = await vscode.workspace.fs.readDirectory(currentDirUri);
+            } catch {
+              return;
+            }
+
+            for (const [name, fileType] of dirContent) {
+              if (name === '.git' || name === 'node_modules' || name === '.DS_Store') {
+                continue;
+              }
+
+              const itemUri = vscode.Uri.joinPath(currentDirUri, name);
+
+              if (fileType === vscode.FileType.Directory) {
+                await this.collectFilesRecursively(itemUri, entries);
+              } else if (fileType === vscode.FileType.File) {
+                try {
+                  const rawBytes = await vscode.workspace.fs.readFile(itemUri);
+                  const relativeFolder = path
+                    .relative(this.workspaceRoot.fsPath, currentDirUri.fsPath)
+                    .replace(/\\/g, '/');
+
+                  const parsedPath = path.parse(name);
+                  const ext = parsedPath.ext.startsWith('.') ? parsedPath.ext.substring(1) : parsedPath.ext;
+
+                  entries.push({
+                    filename: parsedPath.name,
+                    extension: ext,
+                    path: relativeFolder,
+                    content: Buffer.from(rawBytes).toString('utf8')
+                  });
+                } catch (err) {
+                  console.warn(`[ManifestService] Could not read text file at ${itemUri.fsPath}:`, err);
+                }
+              }
+            }
+          }
+        }
+    - filename: "folderSyncService"
+      extension: "ts"
+      path: "src/services"
+      action: create
+      content: |-
+        import * as vscode from 'vscode';
+        import { FolderProfile } from '../types';
+        import { ProfileStorage } from './profileStorage';
+        import { ManifestService } from './manifestService';
+
+        export class FolderSyncService {
+          constructor(
+            private readonly workspaceRoot: vscode.Uri,
+            private readonly storage: ProfileStorage,
+            private readonly manifestService: ManifestService
+          ) {}
+
+          /**
+           * Activates a profile: restores all files from the XML manifest.
+           */
+          public async activateProfile(profile: FolderProfile): Promise<boolean> {
+            return await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: `Activating profile "${profile.name}"...`,
+                cancellable: false
+              },
+              async progress => {
+                try {
+                  progress.report({ message: 'Restoring files from manifest...' });
+                  const count = await this.manifestService.restoreManifest(profile.manifestPath);
+
+                  await this.storage.setProfileEnabled(profile.name, true);
+                  vscode.window.showInformationMessage(
+                    `Profile "${profile.name}" successfully activated (${count} file(s) synchronized).`
+                  );
+                  return true;
+                } catch (error: any) {
+                  vscode.window.showErrorMessage(
+                    `Error activating profile "${profile.name}": ${error.message || error}`
+                  );
+                  return false;
+                }
+              }
+            );
+          }
+
+          /**
+           * Deactivates a profile: prompts the user before removing folders from the workspace.
+           */
+          public async deactivateProfile(profile: FolderProfile): Promise<boolean> {
+            const foldersListText = profile.folders.map(f => `  • ${f}`).join('\n');
+            const confirmChoice = await vscode.window.showWarningMessage(
+              `Deactivating profile "${profile.name}". Would you like to remove the profile folders from the workspace?\n\n${foldersListText}`,
+              { modal: true },
+              'Delete from workspace',
+              'Keep files'
+            );
+
+            if (!confirmChoice) {
+              return false;
+            }
+
+            if (confirmChoice === 'Delete from workspace') {
+              try {
+                for (const relFolder of profile.folders) {
+                  const folderUri = vscode.Uri.joinPath(this.workspaceRoot, relFolder);
+                  try {
+                    await vscode.workspace.fs.delete(folderUri, { recursive: true, useTrash: true });
+                  } catch (deleteError) {
+                    console.warn(`[FolderSyncService] Deletion skipped for ${relFolder}:`, deleteError);
+                  }
+                }
+              } catch (err: any) {
+                vscode.window.showErrorMessage(
+                  `Failed to delete some folders: ${err.message || err}`
+                );
+              }
+            }
+
+            await this.storage.setProfileEnabled(profile.name, false);
+            vscode.window.showInformationMessage(
+              `Profile "${profile.name}" deactivated.${confirmChoice === 'Delete from workspace' ? ' Folders moved to trash.' : ''}`
+            );
+            return true;
+          }
+
+          /**
+           * Toggles or sets the enabled status of a profile.
+           */
+          public async toggleProfile(profileName: string, requestedState?: boolean): Promise<boolean> {
+            const profile = await this.storage.getProfile(profileName);
+            if (!profile) {
+              vscode.window.showErrorMessage(`Profile not found: "${profileName}".`);
+              return false;
+            }
+
+            const nextState = requestedState !== undefined ? requestedState : !profile.enabled;
+
+            if (nextState) {
+              return await this.activateProfile(profile);
+            } else {
+              return await this.deactivateProfile(profile);
+            }
+          }
+
+          /**
+           * Permanently deletes a profile from the YAML configuration after confirmation.
+           */
+          public async deleteProfile(profileName: string): Promise<boolean> {
+            const profile = await this.storage.getProfile(profileName);
+            if (!profile) {
+              return false;
+            }
+
+            const answer = await vscode.window.showWarningMessage(
+              `Are you sure you want to permanently delete profile "${profileName}" from configuration?`,
+              { modal: true },
+              'Delete Profile',
+              'Cancel'
+            );
+
+            if (answer !== 'Delete Profile') {
+              return false;
+            }
+
+            const deleted = await this.storage.deleteProfile(profileName);
+            if (deleted) {
+              vscode.window.showInformationMessage(`Profile "${profileName}" deleted.`);
+            }
+            return deleted;
+          }
+        }
+    - filename: "profilesWebviewView"
+      extension: "ts"
+      path: "src/views"
+      action: create
+      content: |-
+        import * as vscode from 'vscode';
+        import { ProfileStorage } from '../services/profileStorage';
+        import { FolderSyncService } from '../services/folderSyncService';
+        import { WebviewIncomingMessage, WebviewOutgoingMessage } from '../types';
+
+        export class ProfilesWebviewViewProvider implements vscode.WebviewViewProvider {
+          public static readonly viewType = 'folderProfilesView';
+          private _view?: vscode.WebviewView;
+
+          constructor(
+            private readonly extensionUri: vscode.Uri,
+            private readonly workspaceRoot: vscode.Uri,
+            private readonly storage: ProfileStorage,
+            private readonly syncService: FolderSyncService
+          ) {}
+
+          public resolveWebviewView(
+            webviewView: vscode.WebviewView,
+            _context: vscode.WebviewViewResolveContext,
+            _token: vscode.CancellationToken
+          ): void {
+            this._view = webviewView;
+
+            webviewView.webview.options = {
+              enableScripts: true,
+              localResourceRoots: [this.extensionUri]
+            };
+
+            webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
+
+            webviewView.webview.onDidReceiveMessage(async (message: WebviewIncomingMessage) => {
+              switch (message.command) {
+                case 'ready':
+                case 'refresh':
+                  await this.postProfilesUpdate();
+                  break;
+
+                case 'toggleProfile':
+                  await this.syncService.toggleProfile(message.profileName, message.enabled);
+                  await this.postProfilesUpdate();
+                  break;
+
+                case 'deleteProfile':
+                  await this.syncService.deleteProfile(message.profileName);
+                  await this.postProfilesUpdate();
+                  break;
+
+                case 'openFolder':
+                  this.revealFolderInWorkspace(message.folderPath);
+                  break;
+
+                case 'openManifest':
+                  this.openManifestFile(message.manifestPath);
+                  break;
+
+                case 'createProfile':
+                  vscode.commands.executeCommand('folderProfiles.createFromSelection');
+                  break;
+              }
+            });
+
+            this.postProfilesUpdate();
+          }
+
+          /**
+           * Posts the current profile list to the Webview.
+           */
+          public async postProfilesUpdate(): Promise<void> {
+            if (!this._view) {
+              return;
+            }
+            const config = await this.storage.loadConfig();
+            const msg: WebviewOutgoingMessage = {
+              type: 'setProfiles',
+              profiles: config.profiles
+            };
+            this._view.webview.postMessage(msg);
+          }
+
+          private async revealFolderInWorkspace(relPath: string): Promise<void> {
+            const targetUri = vscode.Uri.joinPath(this.workspaceRoot, relPath);
+            try {
+              await vscode.commands.executeCommand('revealInExplorer', targetUri);
+            } catch {
+              vscode.window.showInformationMessage(`Target folder: ${relPath}`);
+            }
+          }
+
+          private async openManifestFile(relPath: string): Promise<void> {
+            const targetUri = vscode.Uri.joinPath(this.workspaceRoot, relPath);
+            try {
+              const doc = await vscode.workspace.openTextDocument(targetUri);
+              await vscode.window.showTextDocument(doc);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Unable to open manifest file: ${err.message || err}`);
+            }
+          }
+
+          private getHtmlForWebview(webview: vscode.Webview): string {
+            const styleUri = webview.asWebviewUri(
+              vscode.Uri.joinPath(this.extensionUri, 'media', 'style.css')
+            );
+            const scriptUri = webview.asWebviewUri(
+              vscode.Uri.joinPath(this.extensionUri, 'media', 'main.js')
+            );
+
+            const nonce = getNonce();
+
+            return `<!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta http-equiv="Content-Security-Policy" content="
+            default-src 'none';
+            style-src ${webview.cspSource} 'unsafe-inline';
+            script-src 'nonce-${nonce}';
+            font-src ${webview.cspSource};
+            img-src ${webview.cspSource} https:;
+          ">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <link rel="stylesheet" href="${styleUri}">
+          <title>Folder Profiles</title>
+        </head>
+        <body>
+          <div class="view-container">
+            <header class="app-header">
+              <div class="header-titles">
+                <span class="header-main-title">Workspace Profiles</span>
+                <span id="profiles-counter" class="profiles-counter">0 profiles</span>
+              </div>
+              <button id="btn-create-profile" class="btn-icon-action" title="Create profile from folders">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/>
+                </svg>
+              </button>
+            </header>
+
+            <main id="profiles-list" class="cards-list">
+              <!-- Rendered dynamically by media/main.js -->
+            </main>
+
+            <!-- Floating popover for excess folders (> 5 folders) -->
+            <div id="folders-popover" class="floating-popover hidden" role="tooltip" aria-hidden="true">
+              <div class="popover-arrow"></div>
+              <div class="popover-header">
+                <span class="popover-title">All Profile Folders</span>
+                <button id="popover-close" class="popover-close-btn" title="Close">&times;</button>
+              </div>
+              <div id="popover-content" class="popover-body"></div>
+            </div>
+          </div>
+
+          <script nonce="${nonce}" src="${scriptUri}"></script>
+        </body>
+        </html>`;
+          }
+        }
+
+        function getNonce(): string {
+          let text = '';
+          const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+          for (let i = 0; i < 32; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+          }
+          return text;
+        }
+    - filename: "style"
+      extension: "css"
+      path: "media"
+      action: create
+      content: |-
+        :root {
+          --radius-sm: 4px;
+          --radius-md: 6px;
+          --radius-lg: 8px;
+          --transition-speed: 0.18s;
+          --card-bg: var(--vscode-editorWidget-background, #1e1e1e);
+          --card-border: var(--vscode-widget-border, rgba(128, 128, 128, 0.22));
+          --card-hover-border: var(--vscode-focusBorder, #007acc);
+          --chip-bg: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
+          --chip-fg: var(--vscode-badge-foreground, var(--vscode-foreground));
+          --muted-text: var(--vscode-descriptionForeground, #8c8c8c);
+        }
+
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
+
+        body {
+          font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+          font-size: var(--vscode-font-size, 13px);
+          color: var(--vscode-foreground, #cccccc);
+          background-color: var(--vscode-sideBar-background, transparent);
+          user-select: none;
+          overflow-x: hidden;
+          padding: 8px;
+        }
+
+        .view-container {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          position: relative;
+          min-height: 100vh;
+        }
+
+        /* Header */
+        .app-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 4px 2px 8px 2px;
+          border-bottom: 1px solid var(--card-border);
+        }
+
+        .header-titles {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .header-main-title {
+          font-size: 11px;
+          text-transform: uppercase;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          color: var(--muted-text);
+        }
+
+        .profiles-counter {
+          font-size: 11px;
+          background: var(--chip-bg);
+          color: var(--chip-fg);
+          padding: 1px 6px;
+          border-radius: 10px;
+        }
+
+        .btn-icon-action {
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--vscode-foreground);
+          cursor: pointer;
+          padding: 4px;
+          border-radius: var(--radius-sm);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background var(--transition-speed), border-color var(--transition-speed);
+        }
+
+        .btn-icon-action:hover {
+          background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+          border-color: var(--card-border);
+        }
+
+        /* Cards List */
+        .cards-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .profile-card {
+          background-color: var(--card-bg);
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-md);
+          padding: 10px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          transition: border-color var(--transition-speed), box-shadow var(--transition-speed), transform var(--transition-speed);
+          position: relative;
+        }
+
+        .profile-card:hover {
+          border-color: var(--card-hover-border);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+        }
+
+        .profile-card.disabled {
+          opacity: 0.72;
+        }
+
+        .profile-card.disabled:hover {
+          opacity: 0.95;
+        }
+
+        /* Card Header */
+        .card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .card-header-left {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          flex: 1;
+        }
+
+        .card-header-right {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .profile-name {
+          font-weight: 600;
+          font-size: 13px;
+          color: var(--vscode-foreground);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* Toggle Switch */
+        .switch-container {
+          position: relative;
+          display: inline-block;
+          width: 28px;
+          height: 16px;
+          flex-shrink: 0;
+        }
+
+        .switch-container input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+
+        .switch-slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: var(--vscode-input-background, #3c3c3c);
+          border: 1px solid var(--vscode-input-border, #555555);
+          transition: var(--transition-speed);
+          border-radius: 16px;
+        }
+
+        .switch-slider:before {
+          position: absolute;
+          content: "";
+          height: 10px;
+          width: 10px;
+          left: 2px;
+          bottom: 2px;
+          background-color: #ffffff;
+          transition: var(--transition-speed);
+          border-radius: 50%;
+        }
+
+        input:checked + .switch-slider {
+          background-color: var(--vscode-button-background, #007acc);
+          border-color: var(--vscode-button-background, #007acc);
+        }
+
+        input:checked + .switch-slider:before {
+          transform: translateX(12px);
+        }
+
+        /* Delete Button */
+        .btn-delete-profile {
+          background: transparent;
+          border: none;
+          color: var(--muted-text);
+          cursor: pointer;
+          font-size: 15px;
+          width: 22px;
+          height: 22px;
+          border-radius: var(--radius-sm);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+          transition: color var(--transition-speed), background var(--transition-speed);
+        }
+
+        .btn-delete-profile:hover {
+          color: var(--vscode-errorForeground, #f48771);
+          background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+        }
+
+        /* Card Body */
+        .card-body {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .profile-desc {
+          font-size: 12px;
+          line-height: 1.35;
+          color: var(--vscode-foreground);
+        }
+
+        .profile-desc.empty {
+          color: var(--muted-text);
+          font-style: italic;
+        }
+
+        /* Tags Row */
+        .tags-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+
+        .tag-badge {
+          font-size: 10px;
+          padding: 1px 6px;
+          border-radius: var(--radius-sm);
+          background: var(--chip-bg);
+          color: var(--chip-fg);
+          font-weight: 500;
+          letter-spacing: 0.02em;
+        }
+
+        /* Folders Wrap */
+        .folders-wrap {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px;
+          margin-top: 2px;
+        }
+
+        .folder-chip {
+          font-family: var(--vscode-editor-font-family, monospace);
+          font-size: 11px;
+          background: rgba(128, 128, 128, 0.12);
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-sm);
+          padding: 2px 6px;
+          color: var(--vscode-textPreformat-foreground, #d7ba7d);
+          cursor: pointer;
+          max-width: 190px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          transition: background var(--transition-speed), border-color var(--transition-speed);
+        }
+
+        .folder-chip:hover {
+          border-color: var(--card-hover-border);
+          background: rgba(128, 128, 128, 0.22);
+        }
+
+        /* +N More Folders Badge */
+        .more-folders-badge {
+          font-size: 10px;
+          font-weight: 600;
+          background: var(--vscode-badge-background, #4d4d4d);
+          color: var(--vscode-badge-foreground, #ffffff);
+          border: 1px solid transparent;
+          padding: 2px 6px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          transition: filter var(--transition-speed), transform var(--transition-speed);
+        }
+
+        .more-folders-badge:hover {
+          filter: brightness(1.2);
+          transform: translateY(-1px);
+        }
+
+        /* Dynamic Floating Popover */
+        .floating-popover {
+          position: fixed;
+          z-index: 1000;
+          width: 260px;
+          max-height: 220px;
+          background: var(--vscode-editorHoverWidget-background, #252526);
+          border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+          border-radius: var(--radius-md);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          opacity: 1;
+          transform: scale(1);
+          transition: opacity var(--transition-speed) ease, transform var(--transition-speed) ease;
+        }
+
+        .floating-popover.hidden {
+          display: none;
+          opacity: 0;
+          transform: scale(0.96);
+          pointer-events: none;
+        }
+
+        .popover-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 6px 10px;
+          background: rgba(255, 255, 255, 0.03);
+          border-bottom: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+        }
+
+        .popover-title {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--vscode-foreground);
+        }
+
+        .popover-close-btn {
+          background: transparent;
+          border: none;
+          color: var(--muted-text);
+          font-size: 14px;
+          cursor: pointer;
+        }
+
+        .popover-close-btn:hover {
+          color: var(--vscode-foreground);
+        }
+
+        .popover-body {
+          padding: 6px 8px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .popover-body .folder-chip {
+          max-width: 100%;
+        }
+
+        /* Empty State */
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 32px 16px;
+          gap: 12px;
+          color: var(--muted-text);
+        }
+
+        .empty-state-icon {
+          font-size: 28px;
+          opacity: 0.5;
+        }
+
+        .btn-primary {
+          background: var(--vscode-button-background, #007acc);
+          color: var(--vscode-button-foreground, #ffffff);
+          border: none;
+          border-radius: var(--radius-sm);
+          padding: 6px 12px;
+          font-size: 12px;
+          cursor: pointer;
+          transition: background var(--transition-speed);
+        }
+
+        .btn-primary:hover {
+          background: var(--vscode-button-hoverBackground, #0062a3);
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+          width: 5px;
+          height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: rgba(128, 128, 128, 0.28);
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(128, 128, 128, 0.45);
+        }
+    - filename: "main"
+      extension: "js"
+      path: "media"
+      action: create
+      content: |-
+        (function () {
+          const vscode = acquireVsCodeApi();
+
+          const profilesListElement = document.getElementById('profiles-list');
+          const counterElement = document.getElementById('profiles-counter');
+          const btnCreateProfile = document.getElementById('btn-create-profile');
+          const popover = document.getElementById('folders-popover');
+          const popoverContent = document.getElementById('popover-content');
+          const popoverCloseBtn = document.getElementById('popover-close');
+
+          let currentProfiles = [];
+          let activePopoverAnchor = null;
+
+          vscode.postMessage({ command: 'ready' });
+
+          btnCreateProfile?.addEventListener('click', () => {
+            vscode.postMessage({ command: 'createProfile' });
+          });
+
+          popoverCloseBtn?.addEventListener('click', hidePopover);
+
+          document.addEventListener('click', (event) => {
+            if (!popover.classList.contains('hidden')) {
+              if (!popover.contains(event.target) && !event.target.classList.contains('more-folders-badge')) {
+                hidePopover();
+              }
+            }
+          });
+
+          window.addEventListener('resize', () => {
+            if (activePopoverAnchor && !popover.classList.contains('hidden')) {
+              positionPopover(activePopoverAnchor);
+            }
+          });
+
+          window.addEventListener('message', (event) => {
+            const message = event.data;
+            switch (message.type) {
+              case 'setProfiles':
+                currentProfiles = message.profiles || [];
+                renderProfiles(currentProfiles);
+                break;
+            }
+          });
+
+          function renderProfiles(profiles) {
+            if (counterElement) {
+              counterElement.textContent = `${profiles.length} profile${profiles.length === 1 ? '' : 's'}`;
+            }
+
+            if (!profiles || profiles.length === 0) {
+              profilesListElement.innerHTML = `
+                <div class="empty-state">
+                  <div class="empty-state-icon">📁</div>
+                  <p>No folder profiles configured.</p>
+                  <button id="btn-empty-create" class="btn-primary">Create Profile</button>
+                </div>
+              `;
+              document.getElementById('btn-empty-create')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'createProfile' });
+              });
+              return;
+            }
+
+            profilesListElement.innerHTML = '';
+
+            profiles.forEach((profile) => {
+              const card = document.createElement('div');
+              card.className = `profile-card ${profile.enabled ? 'enabled' : 'disabled'}`;
+
+              // Header
+              const header = document.createElement('div');
+              header.className = 'card-header';
+
+              const headerLeft = document.createElement('div');
+              headerLeft.className = 'card-header-left';
+
+              // Toggle Switch
+              const switchLabel = document.createElement('label');
+              switchLabel.className = 'switch-container';
+              switchLabel.title = profile.enabled ? 'Deactivate profile' : 'Activate profile';
+
+              const checkbox = document.createElement('input');
+              checkbox.type = 'checkbox';
+              checkbox.checked = profile.enabled;
+              checkbox.addEventListener('change', () => {
+                vscode.postMessage({
+                  command: 'toggleProfile',
+                  profileName: profile.name,
+                  enabled: checkbox.checked
+                });
+              });
+
+              const slider = document.createElement('span');
+              slider.className = 'switch-slider';
+
+              switchLabel.appendChild(checkbox);
+              switchLabel.appendChild(slider);
+
+              const title = document.createElement('span');
+              title.className = 'profile-name';
+              title.textContent = profile.name;
+              title.title = profile.name;
+
+              headerLeft.appendChild(switchLabel);
+              headerLeft.appendChild(title);
+
+              // Delete button
+              const headerRight = document.createElement('div');
+              headerRight.className = 'card-header-right';
+
+              const deleteBtn = document.createElement('button');
+              deleteBtn.className = 'btn-delete-profile';
+              deleteBtn.innerHTML = '&times;';
+              deleteBtn.title = 'Delete profile';
+              deleteBtn.addEventListener('click', () => {
+                vscode.postMessage({
+                  command: 'deleteProfile',
+                  profileName: profile.name
+                });
+              });
+
+              headerRight.appendChild(deleteBtn);
+              header.appendChild(headerLeft);
+              header.appendChild(headerRight);
+              card.appendChild(header);
+
+              // Body
+              const body = document.createElement('div');
+              body.className = 'card-body';
+
+              // Description
+              const desc = document.createElement('div');
+              desc.className = `profile-desc ${profile.description ? '' : 'empty'}`;
+              desc.textContent = profile.description || 'No description provided.';
+              body.appendChild(desc);
+
+              // Tags
+              if (profile.tags && profile.tags.length > 0) {
+                const tagsRow = document.createElement('div');
+                tagsRow.className = 'tags-row';
+                profile.tags.forEach((tag) => {
+                  const tagBadge = document.createElement('span');
+                  tagBadge.className = 'tag-badge';
+                  tagBadge.textContent = tag;
+                  tagsRow.appendChild(tagBadge);
+                });
+                body.appendChild(tagsRow);
+              }
+
+              // Folders (max 5 visible)
+              const foldersWrap = document.createElement('div');
+              foldersWrap.className = 'folders-wrap';
+
+              const visibleFolders = (profile.folders || []).slice(0, 5);
+              const remainingFolders = (profile.folders || []).slice(5);
+
+              visibleFolders.forEach((folderPath) => {
+                const chip = document.createElement('span');
+                chip.className = 'folder-chip';
+                chip.textContent = folderPath;
+                chip.title = `Reveal ${folderPath}`;
+                chip.addEventListener('click', () => {
+                  vscode.postMessage({ command: 'openFolder', folderPath });
+                });
+                foldersWrap.appendChild(chip);
+              });
+
+              if (remainingFolders.length > 0) {
+                const moreBadge = document.createElement('span');
+                moreBadge.className = 'more-folders-badge';
+                moreBadge.textContent = `+${remainingFolders.length} more...`;
+                moreBadge.title = 'Show all folders';
+
+                moreBadge.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  showPopover(profile.folders, moreBadge);
+                });
+
+                foldersWrap.appendChild(moreBadge);
+              }
+
+              body.appendChild(foldersWrap);
+              card.appendChild(body);
+              profilesListElement.appendChild(card);
+            });
+          }
+
+          function showPopover(allFolders, anchorElement) {
+            activePopoverAnchor = anchorElement;
+            popoverContent.innerHTML = '';
+
+            allFolders.forEach((folderPath) => {
+              const chip = document.createElement('span');
+              chip.className = 'folder-chip';
+              chip.textContent = folderPath;
+              chip.title = `Click to reveal in Explorer: ${folderPath}`;
+              chip.addEventListener('click', () => {
+                vscode.postMessage({ command: 'openFolder', folderPath });
+                hidePopover();
+              });
+              popoverContent.appendChild(chip);
+            });
+
+            popover.classList.remove('hidden');
+            positionPopover(anchorElement);
+          }
+
+          function positionPopover(anchorElement) {
+            const rect = anchorElement.getBoundingClientRect();
+            const popoverWidth = 260;
+            const windowWidth = window.innerWidth;
+
+            let left = rect.left;
+            if (left + popoverWidth > windowWidth - 10) {
+              left = windowWidth - popoverWidth - 10;
+            }
+            if (left < 10) {
+              left = 10;
+            }
+
+            let top = rect.bottom + 6;
+            if (top + 220 > window.innerHeight) {
+              top = rect.top - 226;
+            }
+
+            popover.style.top = `${top}px`;
+            popover.style.left = `${left}px`;
+          }
+
+          function hidePopover() {
+            popover.classList.add('hidden');
+            activePopoverAnchor = null;
+          }
+        })();
+    - filename: "extension"
+      extension: "ts"
+      path: "src"
+      action: create
+      content: |-
+        import * as vscode from 'vscode';
+        import * as path from 'path';
+        import { ProfileStorage } from './services/profileStorage';
+        import { ManifestService } from './services/manifestService';
+        import { FolderSyncService } from './services/folderSyncService';
+        import { ProfilesWebviewViewProvider } from './views/profilesWebviewView';
+        import { FolderProfile } from './types';
+
+        export function activate(context: vscode.ExtensionContext) {
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            return;
+          }
+
+          const workspaceRoot = workspaceFolders[0].uri;
+
+          // Initialize core services
+          const profileStorage = new ProfileStorage(workspaceRoot);
+          const manifestService = new ManifestService(workspaceRoot);
+          const folderSyncService = new FolderSyncService(workspaceRoot, profileStorage, manifestService);
+
+          // Initialize sidebar Webview provider
+          const webviewProvider = new ProfilesWebviewViewProvider(
+            context.extensionUri,
+            workspaceRoot,
+            profileStorage,
+            folderSyncService
+          );
+
+          context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider(
+              ProfilesWebviewViewProvider.viewType,
+              webviewProvider
+            )
+          );
+
+          /**
+           * Command: Create or update a profile from selected folders in the Explorer
+           */
+          const createFromSelectionCommand = vscode.commands.registerCommand(
+            'folderProfiles.createFromSelection',
+            async (primaryUri?: vscode.Uri, allSelectedUris?: vscode.Uri[]) => {
+              try {
+                const candidateUris = (allSelectedUris && allSelectedUris.length > 0)
+                  ? allSelectedUris
+                  : (primaryUri ? [primaryUri] : []);
+
+                const validFolderPaths: string[] = [];
+
+                for (const uri of candidateUris) {
+                  try {
+                    const stat = await vscode.workspace.fs.stat(uri);
+                    if (stat.type === vscode.FileType.Directory) {
+                      const rel = path
+                        .relative(workspaceRoot.fsPath, uri.fsPath)
+                        .replace(/\\/g, '/');
+                      if (rel && !rel.startsWith('..')) {
+                        validFolderPaths.push(rel);
+                      }
+                    }
+                  } catch {
+                    // Ignore unresolved paths
+                  }
+                }
+
+                if (validFolderPaths.length === 0) {
+                  vscode.window.showWarningMessage(
+                    'Please select at least one valid folder in the Explorer to create or update a profile.'
+                  );
+                  return;
+                }
+
+                // Load existing configuration
+                const currentConfig = await profileStorage.loadConfig();
+                const existingProfiles = currentConfig.profiles;
+
+                // Step 1: Prompt user for new profile vs update existing
+                const quickPickItems: vscode.QuickPickItem[] = [
+                  {
+                    label: '$(plus) Create a new profile',
+                    description: 'Save a new folder profile entry',
+                    alwaysShow: true
+                  },
+                  ...existingProfiles.map(p => ({
+                    label: `$(folder) ${p.name}`,
+                    description: p.description || '',
+                    detail: `${p.folders.length} folder(s): ${p.folders.slice(0, 3).join(', ')}${p.folders.length > 3 ? '...' : ''}`
+                  }))
+                ];
+
+                const selection = await vscode.window.showQuickPick(quickPickItems, {
+                  placeHolder: 'Select an existing profile to update or create a new one',
+                  ignoreFocusOut: true
+                });
+
+                if (!selection) {
+                  return;
+                }
+
+                const isNew = selection.label.startsWith('$(plus)');
+                let targetProfileName = '';
+                let initialDescription = '';
+                let initialTags: string[] = [];
+
+                if (isNew) {
+                  const inputName = await vscode.window.showInputBox({
+                    prompt: 'Unique profile name (e.g. bmad-core-tools)',
+                    placeHolder: 'profile-name',
+                    ignoreFocusOut: true,
+                    validateInput: (value) => {
+                      if (!value || value.trim().length === 0) {
+                        return 'Profile name is required.';
+                      }
+                      if (!/^[a-zA-Z0-9_\-\.]+$/.test(value.trim())) {
+                        return 'Name must only contain alphanumeric characters, hyphens, underscores, and dots.';
+                      }
+                      return null;
+                    }
+                  });
+
+                  if (!inputName) {
+                    return;
+                  }
+                  targetProfileName = inputName.trim();
+                } else {
+                  targetProfileName = selection.label.replace('$(folder) ', '').trim();
+                  const existing = existingProfiles.find(p => p.name === targetProfileName);
+                  if (existing) {
+                    initialDescription = existing.description || '';
+                    initialTags = existing.tags || [];
+                  }
+                }
+
+                // Step 2: Description input
+                const inputDesc = await vscode.window.showInputBox({
+                  prompt: 'Profile description (optional)',
+                  value: initialDescription,
+                  ignoreFocusOut: true
+                });
+
+                // Step 3: Tags input
+                const inputTags = await vscode.window.showInputBox({
+                  prompt: 'Comma-separated tags (e.g. bmad, tooling, audit)',
+                  value: initialTags.join(', '),
+                  ignoreFocusOut: true
+                });
+
+                const parsedTags = inputTags
+                  ? inputTags
+                      .split(',')
+                      .map(t => t.trim())
+                      .filter(t => t.length > 0)
+                  : [];
+
+                // Step 4: Generate XML manifest and update YAML config
+                await vscode.window.withProgress(
+                  {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Saving profile "${targetProfileName}"...`,
+                    cancellable: false
+                  },
+                  async (progress) => {
+                    progress.report({ message: 'Generating XML manifest...' });
+                    const manifestRelativePath = `.vscode/manifests/${targetProfileName}.manifest.xml`;
+
+                    await manifestService.generateManifest(validFolderPaths, manifestRelativePath);
+
+                    progress.report({ message: 'Updating .vscode/.folders_profiles.yaml...' });
+                    const profileEntry: FolderProfile = {
+                      name: targetProfileName,
+                      description: inputDesc?.trim() || undefined,
+                      tags: parsedTags,
+                      enabled: true,
+                      folders: validFolderPaths,
+                      manifestPath: manifestRelativePath
+                    };
+
+                    await profileStorage.upsertProfile(profileEntry);
+                    await webviewProvider.postProfilesUpdate();
+
+                    vscode.window.showInformationMessage(
+                      `Profile "${targetProfileName}" saved successfully (${validFolderPaths.length} folder(s)).`
+                    );
+                  }
+                );
+              } catch (err: any) {
+                vscode.window.showErrorMessage(
+                  `Error saving folder profile: ${err.message || err}`
+                );
+              }
+            }
+          );
+
+          /**
+           * Command: Refresh the Webview
+           */
+          const refreshCommand = vscode.commands.registerCommand('folderProfiles.refresh', async () => {
+            await webviewProvider.postProfilesUpdate();
+          });
+
+          /**
+           * Command: Toggle profile state
+           */
+          const toggleProfileCommand = vscode.commands.registerCommand(
+            'folderProfiles.toggleProfile',
+            async (profileName: string, enabled?: boolean) => {
+              await folderSyncService.toggleProfile(profileName, enabled);
+              await webviewProvider.postProfilesUpdate();
+            }
+          );
+
+          /**
+           * Command: Delete profile
+           */
+          const deleteProfileCommand = vscode.commands.registerCommand(
+            'folderProfiles.deleteProfile',
+            async (profileName: string) => {
+              await folderSyncService.deleteProfile(profileName);
+              await webviewProvider.postProfilesUpdate();
+            }
+          );
+
+          // Watch external changes to .vscode/.folders_profiles.yaml
+          const yamlWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(workspaceRoot, ProfileStorage.CONFIG_RELATIVE_PATH)
+          );
+
+          yamlWatcher.onDidChange(() => webviewProvider.postProfilesUpdate());
+          yamlWatcher.onDidCreate(() => webviewProvider.postProfilesUpdate());
+          yamlWatcher.onDidDelete(() => webviewProvider.postProfilesUpdate());
+
+          context.subscriptions.push(
+            createFromSelectionCommand,
+            refreshCommand,
+            toggleProfileCommand,
+            deleteProfileCommand,
+            yamlWatcher
+          );
+        }
+
+        export function deactivate() {}
+    - filename: "README"
+      extension: "md"
+      path: "."
+      action: create
+      content: |-
+        # Folder Profiles Manager & Sync for VS Code
+
+        A VS Code extension to capture, bundle, and synchronize redundant folder profiles via XML manifests and YAML configuration.
+
+        ## Features
+
+        - **Explorer Context Integration**: Right-click one or multiple folders in the Explorer (`explorer/context`) to create or update a profile.
+        - **XML Manifest Bundling**: Scans folder structures and stores file contents in CDATA blocks, safely escaping closing tags (`]]>`).
+        - **Single Source of Truth**: Profiles are persisted in `.vscode/.folders_profiles.yaml`.
+        - **Interactive Webview**: Custom sidebar panel with VS Code theme token integration, toggle switches, tags, folder chips, and an interactive popover for profiles with more than 5 folders.
+        - **Folder Synchronization**:
+          - **Enable (toggle on)**: Restores all directories and files from the XML manifest into the workspace.
+          - **Disable (toggle off)**: Prompts for confirmation and moves profile folders to trash.
+
+        ## Local Development & Debugging
+
+        ### 1. Install Dependencies
+        ```bash
+        npm install
+        ```
+
+        ### 2. Compile and Bundle
+        ```bash
+        # One-time build
+        npm run compile
+
+        # Or continuous watch mode during development
+        npm run watch
+        ```
+
+        ### 3. Launch Extension Host
+        1. Open this repository in VS Code.
+        2. Press `F5` (or open the **Run & Debug** view and select **Run Extension**).
+        3. A new **[Extension Development Host]** window will open.
+        4. In the test window, open any workspace containing folders to test creation and synchronization.
+commit:
+  message: "✅ feat(profiles): implement redundant folder profiles manager and sync extension"
